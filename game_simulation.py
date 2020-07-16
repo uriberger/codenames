@@ -1,1 +1,1 @@
-from distance_unharmfulness import distance_unharmfulness
+from unharmfulness import distance_unharmfulness
