@@ -1,8 +1,13 @@
 from unharmfulness import distance_unharmfulness,svm_based_unharmfulness,generate_svm_model
+from helpfulness import helpfulness1,helpfulness2
 import pandas as pd
 import numpy as np
 import spacy
 import math
+import itertools
+
+MAX_BLUE_WORDS_NUM = 4
+#MAX_BLUE_WORDS_NUM = 1
 
 debug = True
 def my_print(str):
@@ -58,8 +63,24 @@ def generate_all_words_tokens():
         res.append(nlp(word))
         
     return res
-        
-blue_tokens,red_tokens = generate_game_tokens(1)
+
+def get_best_blue_word_set(clue_word_token, blue_word_tokens):
+    max_helpfulness = (-1)*math.inf
+    best_word_token_set = None
+    
+    for blue_words_num in range(1,MAX_BLUE_WORDS_NUM+1):
+        blue_word_token_sets = list(itertools.combinations(blue_word_tokens, blue_words_num))
+        for blue_word_token_set in blue_word_token_sets:
+            blue_word_vecs = [x.vector for x in blue_word_token_set]
+            #cur_helpfulness = helpfulness1(blue_word_vecs, clue_word_token.vector)
+            cur_helpfulness = helpfulness2(blue_word_vecs, clue_word_token.vector)
+            if cur_helpfulness > max_helpfulness:
+                max_helpfulness = cur_helpfulness
+                best_word_token_set = blue_word_token_set
+    
+    return max_helpfulness,best_word_token_set
+
+'''blue_tokens,red_tokens = generate_game_tokens(1)
 blue_vectors = [x.vector for x in blue_tokens]
 blue_words = [x.text for x in blue_tokens]
 red_vectors = [x.vector for x in red_tokens]
@@ -79,4 +100,25 @@ for cur_clue_word_token in all_words_tokens:
         max_unharmfulness = cur_unharmfulness
         best_clue_word = cur_clue_word_token.text
     i += 1
-print(best_clue_word)
+print(best_clue_word)'''
+
+blue_tokens,_ = generate_game_tokens(1)
+blue_words = [x.text for x in blue_tokens]
+all_words_tokens = generate_all_words_tokens()
+max_helpfulness = (-1)*math.inf
+best_clue_word = None
+chosen_blue_word_tokens = None
+
+i = 0
+for cur_clue_word_token in all_words_tokens:
+    if cur_clue_word_token.text in blue_words:
+        continue
+    if cur_clue_word_token.text == 'fruit':
+        print('HER')
+    cur_helpfulness,best_word_token_set = get_best_blue_word_set(cur_clue_word_token, blue_tokens)
+    if cur_helpfulness > max_helpfulness:
+        max_helpfulness = cur_helpfulness
+        best_clue_word = cur_clue_word_token.text
+        chosen_blue_word_tokens = best_word_token_set
+    i += 1
+print(best_clue_word,str(chosen_blue_word_tokens))
