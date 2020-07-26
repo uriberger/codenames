@@ -6,9 +6,11 @@ import spacy
 import math
 import itertools
 import en_core_web_sm
+import os
+import scipy as sp
 
 MAX_BLUE_WORDS_NUM = 4
-MIN_BLUE_WORDS_NUM = 4
+MIN_BLUE_WORDS_NUM = 3
 LAMBDA = 0.5
 
 debug = True
@@ -18,6 +20,7 @@ def my_print(str):
 
 board_filename = 'game_words.xlsx'
 all_words_filename = 'all_words.txt'
+all_words_cache_filename = 'all_words_cache'
 my_print('Loading nlp model...')
 nlp = en_core_web_sm.load()
 
@@ -54,13 +57,19 @@ def generate_all_words_set():
     return res
         
 def generate_all_words_tokens():
-    my_print('Generating all words set...')
-    words_set = generate_all_words_set()
-    
-    my_print('Generating all words tokens...')
-    res = []
-    for word in words_set:
-        res.append(nlp(word))
+    full_filename = all_words_cache_filename + '.npy'
+    if os.path.exists(full_filename):
+        loaded_cache = np.load(full_filename)
+        res = loaded_cache[0]
+    else:
+        my_print('Generating all words set...')
+        words_set = generate_all_words_set()
+        
+        my_print('Generating all words tokens...')
+        res = {}
+        for word in words_set:
+            res[word] = nlp(word)
+        np.save(all_words_cache_filename,[res])
         
     return res
 
@@ -100,7 +109,7 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness):
         svm_model = generate_svm_model(blue_vectors,red_vectors)
         
     # Go over all the clue words, and choose the best one
-    for cur_clue_word_token in all_words_tokens:
+    for cur_clue_word_token in all_words_tokens.values():
         if cur_clue_word_token.text.lower() in blue_words:
             continue # It is illegal to give a word which is on the board
         
