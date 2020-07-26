@@ -5,6 +5,7 @@ import numpy as np
 import spacy
 import math
 import itertools
+import en_core_web_sm
 
 MAX_BLUE_WORDS_NUM = 4
 MIN_BLUE_WORDS_NUM = 4
@@ -18,7 +19,7 @@ def my_print(str):
 board_filename = 'game_words.xlsx'
 all_words_filename = 'all_words.txt'
 my_print('Loading nlp model...')
-nlp = spacy.load("en_core_web_md")
+nlp = en_core_web_sm.load()
 
 def generate_game_word_sets(game_number):
     df = pd.read_excel(board_filename)
@@ -108,7 +109,7 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness):
         
         # Calculate unharmfulness
         if use_svm_unharmfulness:
-            cur_unharmfulness = svm_based_unharmfulness(svm_model, np.reshape(cur_clue_word_token.vector,(300,1)))
+            cur_unharmfulness = svm_based_unharmfulness(svm_model, np.reshape(cur_clue_word_token.vector,(cur_clue_word_token.vector.shape[0],1)))
         else:
             cur_unharmfulness = distance_unharmfulness(red_vectors, cur_clue_word_token.vector)
             
