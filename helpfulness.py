@@ -14,8 +14,8 @@ def helpfulness1(blue_word_vecs, clue_word_vec):
     
     blue_words_average_vec = average_vec(blue_word_vecs)
     
-    return (-1) * n * sp.spatial.distance.cosine(clue_word_vec, blue_words_average_vec)
-    #return (-1) * n * np.linalg.norm(clue_word_vec-blue_words_average_vec)
+    #return ((-1) * sp.spatial.distance.cosine(clue_word_vec, blue_words_average_vec))/n
+    return ((-1) * max([sp.spatial.distance.cosine(clue_word_vec, x) for x in blue_word_vecs]))/n
     
 def helpfulness2(blue_word_vecs, clue_word_vec):
     blue_words_average_vec = average_vec(blue_word_vecs)
