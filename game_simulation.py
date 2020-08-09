@@ -9,9 +9,10 @@ import scipy as sp
 import gensim
 from gensim.test.utils import get_tmpfile
 from gensim.models import KeyedVectors
+import copy
 
 MAX_BLUE_WORDS_NUM = 4
-MIN_BLUE_WORDS_NUM = 3
+MIN_BLUE_WORDS_NUM = 2
 LAMBDA = 0.5
 
 debug = True
@@ -40,6 +41,25 @@ def generate_clue_words():
         res.append(line)
     return res
 
+def generate_clues_by_most_similar_clues_set(game_words_set, word_vectors):
+    res = set()
+    for word in game_words_set:
+        most_similar_clues = word_vectors.most_similar(positive =[word],topn= 10)
+        for x in most_similar_clues:
+            res.add(x[0])
+    return res
+
+def generate_clues_by_gensim_top5_25(game_words_set, word_vectors):
+    res = set()
+    for word in game_words_set:
+        most_similar_clues = word_vectors.most_similar(positive =[word],topn= 50)
+        most_similar_clues = most_similar_clues[5:]
+        for x in most_similar_clues:
+            res.add(x[0])
+    return res
+
+
+
 def generate_all_word_vectors():
     fname = get_tmpfile("vectors.kv")
     if os.path.exists(fname):
@@ -50,7 +70,7 @@ def generate_all_word_vectors():
         )
         word_vectors = model.wv
         word_vectors.save(fname)
-    
+
     return word_vectors
         
 def get_best_blue_word_set(helpfulness_func, clue_vec, blue_words_mapping):
@@ -70,51 +90,95 @@ def get_best_blue_word_set(helpfulness_func, clue_vec, blue_words_mapping):
     
     return max_helpfulness,best_words_set
 
-def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness):
-    blue_words,red_words = generate_game_word_sets(game_number)
-    word_vectors = generate_all_word_vectors()
-    blue_words_mapping = {x:word_vectors.get_vector(x) for x in blue_words}
-    red_words_mapping = {x:word_vectors.get_vector(x) for x in red_words}
-    blue_vectors = list(blue_words_mapping.values())
-    red_vectors = list(red_words_mapping.values())
-    clue_words = generate_clue_words()
-    clue_words_mapping = {x:word_vectors.get_vector(x) for x in clue_words}
-    
-    '''Find the clue word and blue word set that maximizes the score, i.e.
-    lambda*helpfulness + (1-lambda)*unharmfulness '''
-    max_score = (-1)*math.inf
-    best_clue_word = None
-    chosen_blue_words = None
-    
-    # Generate the SVM model
-    if use_svm_unharmfulness:
-        my_print('Generating svm model...')
-        svm_model = generate_svm_model(blue_vectors,red_vectors)
-        
-    # Go over all the clue words, and choose the best one
-    for cur_clue_word in clue_words:
-        if cur_clue_word in blue_words:
-            continue # It is illegal to give a word which is on the board
-        
-        cur_clue_vec = word_vectors.get_vector(cur_clue_word)
-        
-        # Calculate helpfulness
-        cur_helpfulness,best_words_set = get_best_blue_word_set(helpfulness_func, cur_clue_vec, blue_words_mapping)
-        
-        # Calculate unharmfulness
+def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restricted_clues_list= False, gensim_clues_list = False):
+    try:
+        blue_words,red_words = generate_game_word_sets(game_number)
+        word_vectors = generate_all_word_vectors()
+        blue_words_mapping = {x:word_vectors.get_vector(x) for x in blue_words}
+        red_words_mapping = {x:word_vectors.get_vector(x) for x in red_words}
+        blue_vectors = list(blue_words_mapping.values())
+        red_vectors = list(red_words_mapping.values())
+        clue_words = generate_clue_words()
+
+        clue_words_mapping = {x:word_vectors.get_vector(x) for x in clue_words}
+
+        '''Find the clue word and blue word set that maximizes the score, i.e.
+        lambda*helpfulness + (1-lambda)*unharmfulness '''
+        max_score = (-1)*math.inf
+        best_clue_word = None
+        chosen_blue_words = None
+
+        # Generate the SVM model
         if use_svm_unharmfulness:
-            cur_unharmfulness = svm_based_unharmfulness(svm_model, np.reshape(cur_clue_vec,(cur_clue_vec.shape[0],1)))
-        else:
-            cur_unharmfulness = distance_unharmfulness(red_vectors, cur_clue_vec)
-            
-        cur_score = LAMBDA * cur_helpfulness + (1-LAMBDA)*cur_unharmfulness
-        if cur_score > max_score:
-            max_score = cur_score
-            best_clue_word = cur_clue_word
-            chosen_blue_words = best_words_set
-            
-    print('Clue word: ' + str(best_clue_word) + ', referred blue words: ' + str(chosen_blue_words))
-    print('All the blue words: ' + str(blue_words))
-    print('All the red words: ' + str(red_words))
-    
-generate_clue(6, helpfulness1, True)
+            my_print('Generating svm model...')
+            svm_model = generate_svm_model(blue_vectors,red_vectors)
+
+        if gensim_clues_list:
+            clue_words = generate_clues_by_gensim_top5_25(blue_vectors, word_vectors)
+
+        if restricted_clues_list:
+            word_vectors.most_similar("cat")  # to initialize the model and avoid future exception
+            clue_words = restrict_w2v(word_vectors, clue_words)
+
+        # Go over all the clue words, and choose the best one
+        for cur_clue_word in clue_words:
+            if cur_clue_word in blue_words:
+                continue # It is illegal to give a word which is on the board
+
+            cur_clue_vec = word_vectors.get_vector(cur_clue_word)
+
+            # Calculate helpfulness
+            cur_helpfulness,best_words_set = get_best_blue_word_set(helpfulness_func, cur_clue_vec, blue_words_mapping)
+
+            # Calculate unharmfulness
+            if use_svm_unharmfulness:
+                cur_unharmfulness = svm_based_unharmfulness(svm_model, np.reshape(cur_clue_vec,(cur_clue_vec.shape[0],1)))
+            else:
+                cur_unharmfulness = distance_unharmfulness(red_vectors, cur_clue_vec)
+
+            cur_score = LAMBDA * cur_helpfulness + (1-LAMBDA)*cur_unharmfulness
+            if cur_score > max_score:
+                max_score = cur_score
+                best_clue_word = cur_clue_word
+                chosen_blue_words = best_words_set
+
+        print('Clue word: ' + str(best_clue_word) + ', referred blue words: ' + str(chosen_blue_words))
+        print('All the blue words: ' + str(blue_words))
+        print('All the red words: ' + str(red_words))
+    except KeyError as error:
+        print("Word was missing in the dict, the error is:")
+        print(error)
+
+
+def restrict_w2v(w2v, restricted_word_set):
+    #the function generates a model with only the restricted word set inside
+    new_w2v = copy.deepcopy(w2v)
+    new_vectors = []
+    new_vocab = {}
+    new_index2entity = []
+    new_vectors_norm = []
+
+    for i in range(len(new_w2v.vocab)):
+        word = new_w2v.index2entity[i]
+        vec = new_w2v.vectors[i]
+        vocab = new_w2v.vocab[word]
+        vec_norm = new_w2v.vectors_norm[i]
+        if word in restricted_word_set:
+            vocab.index = len(new_index2entity)
+            new_index2entity.append(word)
+            new_vocab[word] = vocab
+            new_vectors.append(vec)
+            new_vectors_norm.append(vec_norm)
+
+    new_w2v.vocab = new_vocab
+    new_w2v.vectors = np.array(new_vectors)
+    new_w2v.index2entity = np.array(new_index2entity)
+    new_w2v.index2word = np.array(new_index2entity)
+    new_w2v.vectors_norm = np.array(new_vectors_norm)
+    return new_w2v
+
+
+
+for i in range(1,26):
+    print("creating clues for game number "+str(i))
+    generate_clue(i, helpfulness1,True,False,True)
