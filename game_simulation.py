@@ -10,9 +10,10 @@ import gensim
 from gensim.test.utils import get_tmpfile
 from gensim.models import KeyedVectors
 import copy
+import inflect
 
-MAX_BLUE_WORDS_NUM = 4
-MIN_BLUE_WORDS_NUM = 2
+MAX_BLUE_WORDS_NUM = 2
+MIN_BLUE_WORDS_NUM = 1
 LAMBDA = 0.5
 
 debug = True
@@ -90,6 +91,23 @@ def get_best_blue_word_set(helpfulness_func, clue_vec, blue_words_mapping):
     
     return max_helpfulness,best_words_set
 
+def is_legal_clue_word(blue_words,clue_word):
+    p = inflect.engine()
+    
+    if clue_word in blue_words:
+        return False
+    
+    if p.plural(clue_word) in blue_words:
+        return False
+    
+    singular_noun = p.singular_noun(clue_word)
+    if singular_noun == False:
+        singular_noun = clue_word
+    if singular_noun + 'er' in blue_words or singular_noun + 'ers' in blue_words:
+        return False
+    
+    return True
+
 def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restricted_clues_list= False, gensim_clues_list = False):
     try:
         blue_words,red_words = generate_game_word_sets(game_number)
@@ -114,7 +132,9 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
             svm_model = generate_svm_model(blue_vectors,red_vectors)
 
         if gensim_clues_list:
-            clue_words = generate_clues_by_gensim_top5_25(blue_vectors, word_vectors)
+            #clue_words = generate_clues_by_gensim_top5_25(blue_vectors, word_vectors)
+            gensim_clue_words = generate_clues_by_gensim_top5_25(blue_vectors, word_vectors)
+            clue_words = [x for x in gensim_clue_words if x in clue_words]
 
         if restricted_clues_list:
             word_vectors.most_similar("cat")  # to initialize the model and avoid future exception
@@ -122,8 +142,8 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
 
         # Go over all the clue words, and choose the best one
         for cur_clue_word in clue_words:
-            if cur_clue_word in blue_words:
-                continue # It is illegal to give a word which is on the board
+            if not is_legal_clue_word(blue_words, cur_clue_word):
+                continue
 
             cur_clue_vec = word_vectors.get_vector(cur_clue_word)
 
@@ -176,8 +196,6 @@ def restrict_w2v(w2v, restricted_word_set):
     new_w2v.index2word = np.array(new_index2entity)
     new_w2v.vectors_norm = np.array(new_vectors_norm)
     return new_w2v
-
-
 
 for i in range(1,26):
     print("creating clues for game number "+str(i))
