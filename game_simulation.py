@@ -124,6 +124,8 @@ def is_legal_clue_word(blue_words,clue_word):
     return True
 
 def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restricted_clues_list= False, gensim_clues_list = False):
+    global er_cache
+    er_cache = None
     try:
         blue_words,red_words = generate_game_word_sets(game_number)
         word_vectors = generate_all_word_vectors()
