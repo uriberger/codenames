@@ -91,7 +91,11 @@ def get_best_blue_word_set(helpfulness_func, clue_vec, blue_words_mapping):
     
     return max_helpfulness,best_words_set
 
+er_cache = None
+
 def is_legal_clue_word(blue_words,clue_word):
+    global er_cache
+    
     p = inflect.engine()
     
     if clue_word in blue_words:
@@ -104,6 +108,17 @@ def is_legal_clue_word(blue_words,clue_word):
     if singular_noun == False:
         singular_noun = clue_word
     if singular_noun + 'er' in blue_words or singular_noun + 'ers' in blue_words:
+        return False
+    
+    if er_cache == None:
+        er_cache = []
+        for blue_word in blue_words:
+            singular_noun = p.singular_noun(blue_word)
+            if singular_noun == False:
+                singular_noun = blue_word
+            er_cache.append(singular_noun+'er')
+            er_cache.append(singular_noun+'ers')
+    if clue_word in er_cache:
         return False
     
     return True
