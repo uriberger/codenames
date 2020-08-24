@@ -11,10 +11,16 @@ from gensim.test.utils import get_tmpfile
 from gensim.models import KeyedVectors
 import copy
 import inflect
+import csv
 
 MAX_BLUE_WORDS_NUM = 2
 MIN_BLUE_WORDS_NUM = 1
 LAMBDA = 0.5
+WRITE_CLUES_TO_FILE = False
+
+if WRITE_CLUES_TO_FILE:
+    clues_file = csv.writer(open('clues.csv', 'w', newline=''))
+    clues_file.writerow(['Game number','Clue word','Referred blue words'])
 
 debug = True
 def my_print(str):
@@ -42,14 +48,6 @@ def generate_clue_words():
         res.append(line)
     return res
 
-def generate_clues_by_most_similar_clues_set(game_words_set, word_vectors):
-    res = set()
-    for word in game_words_set:
-        most_similar_clues = word_vectors.most_similar(positive =[word],topn= 10)
-        for x in most_similar_clues:
-            res.add(x[0])
-    return res
-
 def generate_clues_by_gensim_top5_25(game_words_set, word_vectors):
     res = set()
     for word in game_words_set:
@@ -58,8 +56,6 @@ def generate_clues_by_gensim_top5_25(game_words_set, word_vectors):
         for x in most_similar_clues:
             res.add(x[0])
     return res
-
-
 
 def generate_all_word_vectors():
     fname = get_tmpfile("vectors.kv")
@@ -172,7 +168,7 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
                 cur_unharmfulness = svm_based_unharmfulness(svm_model, np.reshape(cur_clue_vec,(cur_clue_vec.shape[0],1)))
             else:
                 cur_unharmfulness = distance_unharmfulness(red_vectors, cur_clue_vec)
-
+            
             cur_score = LAMBDA * cur_helpfulness + (1-LAMBDA)*cur_unharmfulness
             if cur_score > max_score:
                 max_score = cur_score
@@ -182,6 +178,10 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
         print('Clue word: ' + str(best_clue_word) + ', referred blue words: ' + str(chosen_blue_words))
         print('All the blue words: ' + str(blue_words))
         print('All the red words: ' + str(red_words))
+        
+        if WRITE_CLUES_TO_FILE:
+            chosen_blue_words_str = ';'.join(chosen_blue_words)
+            clues_file.writerow([str(game_number),str(best_clue_word),chosen_blue_words_str])
     except KeyError as error:
         print("Word was missing in the dict, the error is:")
         print(error)
@@ -217,3 +217,4 @@ def restrict_w2v(w2v, restricted_word_set):
 for i in range(1,26):
     print("creating clues for game number "+str(i))
     generate_clue(i, helpfulness1,True,False,True)
+    #generate_clue(i, helpfulness1,False,False,True)
