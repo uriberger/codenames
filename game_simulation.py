@@ -1,3 +1,14 @@
+#################################
+####### Codenames project #######
+# By Uri Berger, Tomer Genossar #
+########## August 2020 ##########
+#################################
+
+'''
+File name: game_simulation.py.
+Description: This is the main file that generates the clues.
+'''
+
 from unharmfulness import distance_unharmfulness,svm_based_unharmfulness,generate_svm_model
 from helpfulness import helpfulness1,helpfulness2
 import pandas as pd
@@ -13,26 +24,38 @@ import copy
 import inflect
 import csv
 
+# Filenames
+
+board_filename = 'game_words.xlsx'
+clue_words_filename = 'clue_nouns.txt'
+clues_filename = 'clues.csv'
+vectors_filename = 'vectors.kv'
+
+# Model parameters
+
 MAX_BLUE_WORDS_NUM = 2
 MIN_BLUE_WORDS_NUM = 1
 LAMBDA = 0.5
-WRITE_CLUES_TO_FILE = False
 
+# Write clues to file flag
+
+WRITE_CLUES_TO_FILE = False
 if WRITE_CLUES_TO_FILE:
-    clues_file = csv.writer(open('clues.csv', 'w', newline=''))
+    # Open file and write column headers
+    clues_file = csv.writer(open(clues_filename, 'w', newline=''))
     clues_file.writerow(['Game number','Clue word','Referred blue words'])
+
+# Debug flag
 
 debug = True
 def my_print(str):
     if debug:
         print(str)
 
-board_filename = 'game_words.xlsx'
-#clue_words_filename = 'clue_words.txt'
-clue_words_filename = 'clue_nouns.txt'
-all_vectors_cache_filename = 'vectors.kv'
+# Clue generation functions
 
 def generate_game_word_sets(game_number):
+    ''' Generate the blue and red word lists, for the given game number. '''
     df = pd.read_excel(board_filename)
     column_list = df.columns.ravel()
     all_words = df['words'].tolist()
@@ -41,6 +64,7 @@ def generate_game_word_sets(game_number):
     return blue_words,red_words
         
 def generate_clue_words():
+    ''' Generate the possible clue words from the clues file. '''
     fp = open(clue_words_filename,'r')
     res = []
     for line in fp:
@@ -48,7 +72,11 @@ def generate_clue_words():
         res.append(line)
     return res
 
-def generate_clues_by_gensim_top5_25(game_words_set, word_vectors):
+def generate_clues_by_gensim_similarity(game_words_set, word_vectors):
+    ''' Generate the possible clue words according to the gensim similarity:
+    Collect all the words that are within the 50 nearest neighbors of one of the words in the given
+    game words set, but is not within the 5 nearest neighbors (to avoid clues like 'play' to the
+    word 'player'). '''
     res = set()
     for word in game_words_set:
         most_similar_clues = word_vectors.most_similar(positive =[word],topn= 50)
@@ -58,7 +86,10 @@ def generate_clues_by_gensim_top5_25(game_words_set, word_vectors):
     return res
 
 def generate_all_word_vectors():
-    fname = get_tmpfile("vectors.kv")
+    ''' Generate the word vectors of the top frequent 500,000 words, from the GoogleNews data set.
+    If there's a cache file- load it. Otherwise, generate from scrach, and save it to the cache
+    file. '''
+    fname = get_tmpfile(vectors_filename)
     if os.path.exists(fname):
         word_vectors = KeyedVectors.load(fname, mmap='r')
     else:
@@ -71,7 +102,8 @@ def generate_all_word_vectors():
     return word_vectors
         
 def get_best_blue_word_set(helpfulness_func, clue_vec, blue_words_mapping):
-    # Given a clue word, get the best blue word set that this clue word refers to
+    ''' Given a clue word, get the best blue word set that this clue word refers to, according to
+    the given helpfulness function. '''
     max_helpfulness = (-1)*math.inf
     best_words_set = None
     
@@ -87,25 +119,31 @@ def get_best_blue_word_set(helpfulness_func, clue_vec, blue_words_mapping):
     
     return max_helpfulness,best_words_set
 
+# Keep a cache of all the blue words with 'er' and 'ers' suffix, instead of recalculating it every time
 er_cache = None
 
 def is_legal_clue_word(blue_words,clue_word):
+    ''' Check if a given clue word is a legal clue for the given blue words. '''
     global er_cache
     
     p = inflect.engine()
     
+    # Check if clue is one of the blue words
     if clue_word in blue_words:
         return False
     
+    # Check if clue is singular or plural form of one of the blue words
     if p.plural(clue_word) in blue_words:
         return False
     
+    # Check if clue with 'er' or 'ers' suffix is one of the blue words
     singular_noun = p.singular_noun(clue_word)
     if singular_noun == False:
         singular_noun = clue_word
     if singular_noun + 'er' in blue_words or singular_noun + 'ers' in blue_words:
         return False
     
+    # Check if one of the blue words with 'er' or 'ers' as suffix is equal to the clue
     if er_cache == None:
         er_cache = []
         for blue_word in blue_words:
@@ -119,7 +157,8 @@ def is_legal_clue_word(blue_words,clue_word):
     
     return True
 
-def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restricted_clues_list= False, gensim_clues_list = False):
+def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, gensim_clues_list = True):
+    ''' Generate the best clue for the given game number. '''
     global er_cache
     er_cache = None
     try:
@@ -130,7 +169,6 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
         blue_vectors = list(blue_words_mapping.values())
         red_vectors = list(red_words_mapping.values())
         clue_words = generate_clue_words()
-
         clue_words_mapping = {x:word_vectors.get_vector(x) for x in clue_words}
 
         '''Find the clue word and blue word set that maximizes the score, i.e.
@@ -145,13 +183,8 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
             svm_model = generate_svm_model(blue_vectors,red_vectors)
 
         if gensim_clues_list:
-            #clue_words = generate_clues_by_gensim_top5_25(blue_vectors, word_vectors)
-            gensim_clue_words = generate_clues_by_gensim_top5_25(blue_vectors, word_vectors)
+            gensim_clue_words = generate_clues_by_gensim_similarity(blue_vectors, word_vectors)
             clue_words = [x for x in gensim_clue_words if x in clue_words]
-
-        if restricted_clues_list:
-            word_vectors.most_similar("cat")  # to initialize the model and avoid future exception
-            clue_words = restrict_w2v(word_vectors, clue_words)
 
         # Go over all the clue words, and choose the best one
         for cur_clue_word in clue_words:
@@ -186,35 +219,7 @@ def generate_clue(game_number, helpfulness_func, use_svm_unharmfulness, restrict
         print("Word was missing in the dict, the error is:")
         print(error)
 
-
-def restrict_w2v(w2v, restricted_word_set):
-    #the function generates a model with only the restricted word set inside
-    new_w2v = copy.deepcopy(w2v)
-    new_vectors = []
-    new_vocab = {}
-    new_index2entity = []
-    new_vectors_norm = []
-
-    for i in range(len(new_w2v.vocab)):
-        word = new_w2v.index2entity[i]
-        vec = new_w2v.vectors[i]
-        vocab = new_w2v.vocab[word]
-        vec_norm = new_w2v.vectors_norm[i]
-        if word in restricted_word_set:
-            vocab.index = len(new_index2entity)
-            new_index2entity.append(word)
-            new_vocab[word] = vocab
-            new_vectors.append(vec)
-            new_vectors_norm.append(vec_norm)
-
-    new_w2v.vocab = new_vocab
-    new_w2v.vectors = np.array(new_vectors)
-    new_w2v.index2entity = np.array(new_index2entity)
-    new_w2v.index2word = np.array(new_index2entity)
-    new_w2v.vectors_norm = np.array(new_vectors_norm)
-    return new_w2v
-
 for i in range(1,26):
     print("creating clues for game number "+str(i))
-    generate_clue(i, helpfulness1,True,False,True)
-    #generate_clue(i, helpfulness1,False,False,True)
+    generate_clue(i, helpfulness1,True,False)
+    #generate_clue(i, helpfulness1,False,False)
